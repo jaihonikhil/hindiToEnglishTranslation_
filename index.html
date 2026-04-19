@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hindi → English Live Translator</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f5f4f0; color: #1a1a1a;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 2rem 1rem;
+  }
+  .container { width: 100%; max-width: 640px; }
+  h1 { font-size: 20px; font-weight: 500; margin-bottom: 4px; }
+  .subtitle { font-size: 13px; color: #666; margin-bottom: 1.5rem; }
+  .pill-row { display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 999px; }
+  .pill-blue { background: #e8f0fe; color: #1967d2; }
+  .pill-orange { background: #fff3e0; color: #e65100; }
+  .card { background: #fff; border: 1px solid #e5e3de; border-radius: 14px; padding: 1.25rem; margin-bottom: 1rem; }
+  .field-label { font-size: 12px; color: #888; margin-bottom: 5px; display: block; }
+  input[type="password"], select {
+    width: 100%; padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px;
+    font-size: 14px; background: #fafafa; color: #1a1a1a; outline: none; transition: border-color 0.15s;
+  }
+  input:focus, select:focus { border-color: #aaa; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .tip { font-size: 12px; color: #aaa; margin-top: 8px; }
+  .tip a { color: #555; }
+  #live-btn {
+    width: 100%; padding: 18px; border-radius: 14px; border: 2px solid #ddd;
+    background: #fff; font-size: 16px; font-weight: 500; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    transition: all 0.2s; color: #1a1a1a;
+  }
+  #live-btn:hover { background: #f5f4f0; }
+  #live-btn.active { border-color: #e24b4a; color: #e24b4a; background: #fff8f8; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.2} }
+  .dot.pulse { animation: pulse 0.9s infinite; }
+  .live-bar { display: none; align-items: center; gap: 8px; font-size: 12px; color: #e24b4a; margin-top: 10px; padding: 7px 12px; background: #fff5f5; border-radius: 8px; }
+  .live-bar.show { display: flex; }
+  .live-bar-dot { width: 7px; height: 7px; border-radius: 50%; background: #e24b4a; animation: pulse 0.9s infinite; }
+  .divider { height: 1px; background: #eeece8; margin: 1.1rem 0; }
+  .stream-box { min-height: 60px; margin-bottom: 12px; }
+  .lang-badge { display: inline-block; font-size: 11px; font-weight: 500; padding: 2px 9px; border-radius: 999px; margin-bottom: 8px; }
+  .badge-hi { background: #faece7; color: #993c1d; }
+  .badge-en { background: #e6f1fb; color: #185fa5; }
+  .live-transcript { font-size: 15px; line-height: 1.7; color: #1a1a1a; min-height: 24px; word-break: break-word; }
+  .live-transcript .final { color: #1a1a1a; }
+  .live-transcript .interim { color: #aaa; font-style: italic; }
+  .live-transcript.muted { color: #bbb; font-style: italic; font-size: 13px; }
+  .history { margin-top: 1rem; max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  .hist-item { padding: 8px 12px; border-radius: 8px; background: #f9f8f5; font-size: 13px; line-height: 1.55; border-left: 3px solid #e6f1fb; }
+  .status { font-size: 12px; margin-top: 10px; min-height: 18px; color: #888; }
+  .status.error { color: #e24b4a; }
+  .status.ok { color: #1d9e75; }
+  .status.speaking { color: #185fa5; }
+  .status.reconnecting { color: #f59300; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Hindi → English live translator</h1>
+  <p class="subtitle">True real-time streaming — words appear as you speak, auto-reconnects if connection drops</p>
+  <div class="pill-row">
+    <span class="pill pill-blue">Soniox STT + Translation</span>
+    <span class="pill pill-orange">Sarvam Bulbul v3 TTS</span>
+  </div>
+
+  <div class="card">
+    <label class="field-label">Soniox API key</label>
+    <input type="password" id="soniox-key" placeholder="Get from console.soniox.com">
+    <label class="field-label" style="margin-top:10px;">Sarvam API key</label>
+    <input type="password" id="sarvam-key" placeholder="Get from dashboard.sarvam.ai">
+    <div class="row">
+      <div>
+        <label class="field-label">TTS voice</label>
+        <select id="tts-voice">
+          <option value="ritu">Ritu (female)</option>
+          <option value="priya">Priya (female)</option>
+          <option value="neha">Neha (female)</option>
+          <option value="pooja">Pooja (female)</option>
+          <option value="simran">Simran (female)</option>
+          <option value="ishita">Ishita (female)</option>
+          <option value="kavya">Kavya (female)</option>
+          <option value="shreya">Shreya (female)</option>
+          <option value="tanya">Tanya (female)</option>
+          <option value="shruti">Shruti (female)</option>
+          <option value="suhani">Suhani (female)</option>
+          <option value="roopa">Roopa (female)</option>
+          <option value="niharika">Niharika (female)</option>
+          <option value="rupali">Rupali (female)</option>
+          <option value="kavitha">Kavitha (female)</option>
+          <option value="rahul">Rahul (male)</option>
+          <option value="aditya">Aditya (male)</option>
+          <option value="advait">Advait (male)</option>
+          <option value="ashutosh">Ashutosh (male)</option>
+          <option value="rohan">Rohan (male)</option>
+          <option value="amit">Amit (male)</option>
+          <option value="dev">Dev (male)</option>
+          <option value="shubh">Shubh (male)</option>
+          <option value="kabir">Kabir (male)</option>
+          <option value="manan">Manan (male)</option>
+          <option value="varun">Varun (male)</option>
+          <option value="ratan">Ratan (male)</option>
+          <option value="sumit">Sumit (male)</option>
+          <option value="aayan">Aayan (male)</option>
+          <option value="anand">Anand (male)</option>
+          <option value="tarun">Tarun (male)</option>
+          <option value="sunny">Sunny (male)</option>
+          <option value="mani">Mani (male)</option>
+          <option value="gokul">Gokul (male)</option>
+          <option value="vijay">Vijay (male)</option>
+          <option value="mohit">Mohit (male)</option>
+          <option value="rehan">Rehan (male)</option>
+          <option value="soham">Soham (male)</option>
+        </select>
+      </div>
+      <div>
+        <label class="field-label">Auto-speak</label>
+        <select id="auto-speak">
+          <option value="yes">Yes — speak automatically</option>
+          <option value="no">Text only</option>
+        </select>
+      </div>
+    </div>
+    <p class="tip">Soniox: <a href="https://console.soniox.com" target="_blank">console.soniox.com</a> &nbsp;·&nbsp; Sarvam: <a href="https://dashboard.sarvam.ai" target="_blank">dashboard.sarvam.ai</a></p>
+    <button id="test-tts-btn" style="margin-top:10px;padding:7px 14px;border-radius:8px;border:1px solid #ddd;background:#f5f4f0;font-size:13px;cursor:pointer;color:#444;">🔊 Test TTS voice</button>
+    <span id="test-tts-status" style="font-size:12px;color:#888;margin-left:8px;"></span>
+  </div>
+
+  <div class="card">
+    <button id="live-btn">
+      <span class="dot" id="dot"></span>
+      <span id="btn-label">Click to start live translation</span>
+    </button>
+    <div class="live-bar" id="live-bar">
+      <span class="live-bar-dot"></span>
+      <span id="live-bar-text">Streaming — words appear as you speak</span>
+    </div>
+    <div class="divider"></div>
+    <div class="stream-box">
+      <span class="lang-badge badge-hi">Hindi (live)</span>
+      <div class="live-transcript muted" id="hindi-live">speak to see transcription…</div>
+    </div>
+    <div class="stream-box">
+      <span class="lang-badge badge-en">English (live translation)</span>
+      <div class="live-transcript muted" id="english-live">translation streams here…</div>
+    </div>
+    <div id="history-section" style="display:none;">
+      <div style="height:1px;background:#eeece8;margin:1rem 0;"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:11px;font-weight:500;color:#aaa;letter-spacing:0.03em;">SPOKEN CHUNKS HISTORY</span>
+        <button id="hide-history-btn" onclick="document.getElementById('history-section').style.display='none'" style="font-size:11px;color:#aaa;background:none;border:none;cursor:pointer;padding:2px 6px;border-radius:4px;">✕ Hide</button>
+      </div>
+      <div class="history" id="history"></div>
+    </div>
+    <div class="status" id="status-msg"></div>
+    <div style="margin-top:8px;">
+      <button id="show-history-btn" onclick="document.getElementById('history-section').style.display='block';this.style.display='none'" style="display:none;font-size:11px;color:#aaa;background:none;border:1px solid #e5e3de;cursor:pointer;padding:3px 10px;border-radius:6px;">Show history</button>
+    </div>
+    <details style="margin-top:10px;">
+      <summary style="font-size:11px;color:#aaa;cursor:pointer;">Debug — raw token log</summary>
+      <div id="debug-log" style="font-size:10px;font-family:monospace;color:#888;max-height:120px;overflow-y:auto;margin-top:6px;background:#f9f8f5;padding:6px;border-radius:6px;white-space:pre-wrap;"></div>
+    </details>
+  </div>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let ws = null;
+  let micStream = null;
+  let audioCtx = null;
+  let processor = null;
+  let isLive = false;
+  let keepaliveTimer = null;
+  let reconnectTimer = null;
+  let reconnectDelay = 1000;
+
+  let finalHindi = '';
+  let finalEnglish = '';
+  let pendingSpeak = '';
+  let isSpeaking = false;
+  let speakQueue = [];
+
+  // ── Elements ───────────────────────────────────────────────────────────────
+  const liveBtn     = document.getElementById('live-btn');
+  const dot         = document.getElementById('dot');
+  const btnLabel    = document.getElementById('btn-label');
+  const hindiLive   = document.getElementById('hindi-live');
+  const englishLive = document.getElementById('english-live');
+  const statusEl    = document.getElementById('status-msg');
+  const historyEl   = document.getElementById('history');
+  const liveBar     = document.getElementById('live-bar');
+  const liveBarText = document.getElementById('live-bar-text');
+  const debugLog    = document.getElementById('debug-log');
+
+  function setStatus(msg, type='') { statusEl.textContent = msg; statusEl.className = 'status'+(type?' '+type:''); }
+  function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function dbg(msg) {
+    const line = '[' + new Date().toISOString().slice(11,23) + '] ' + msg + '\n';
+    debugLog.textContent = line + debugLog.textContent;
+  }
+
+  // ── Test TTS button ────────────────────────────────────────────────────────
+  document.getElementById('test-tts-btn').addEventListener('click', async () => {
+    const statusSpan = document.getElementById('test-tts-status');
+    statusSpan.textContent = 'Calling Sarvam…';
+    try {
+      await speakText('Hello, the text to speech is working correctly.');
+      statusSpan.textContent = '✅ TTS worked!';
+    } catch(e) {
+      statusSpan.textContent = '❌ ' + e.message;
+    }
+    setTimeout(() => { statusSpan.textContent = ''; }, 4000);
+  });
+
+  // ── Toggle ─────────────────────────────────────────────────────────────────
+  liveBtn.addEventListener('click', () => { isLive ? stopLive() : startLive(); });
+
+  async function startLive() {
+    const sonioxKey = document.getElementById('soniox-key').value.trim();
+    const sarvamKey = document.getElementById('sarvam-key').value.trim();
+    if (!sonioxKey) { setStatus('Please enter your Soniox API key.', 'error'); return; }
+
+    // Open mic once — reuse across reconnects
+    if (!micStream) {
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, sampleRate: 16000 }
+        });
+      } catch(e) { setStatus('Mic error: ' + e.message, 'error'); return; }
+    }
+
+    isLive = true;
+    finalHindi = ''; finalEnglish = ''; pendingSpeak = '';
+    historyEl.innerHTML = '';
+    document.getElementById('history-section').style.display = 'none';
+    document.getElementById('show-history-btn').style.display = 'none';
+    hindiLive.className = 'live-transcript'; hindiLive.innerHTML = '';
+    englishLive.className = 'live-transcript'; englishLive.innerHTML = '';
+    liveBtn.classList.add('active');
+    dot.classList.add('pulse');
+    btnLabel.textContent = 'Click to stop';
+    liveBar.classList.add('show');
+
+    connectWebSocket();
+  }
+
+  function connectWebSocket() {
+    if (!isLive) return;
+    const sonioxKey = document.getElementById('soniox-key').value.trim();
+
+    // Clean up old ws if any
+    if (ws) { try { ws.onclose = null; ws.close(); } catch(e){} ws = null; }
+    clearInterval(keepaliveTimer);
+
+    setStatus('Connecting…', '');
+    ws = new WebSocket('wss://stt-rt.soniox.com/transcribe-websocket');
+    ws.binaryType = 'arraybuffer';
+
+    ws.onopen = () => {
+      reconnectDelay = 1000; // reset backoff on success
+      // 1. Send config
+      ws.send(JSON.stringify({
+        api_key: sonioxKey,
+        model: 'stt-rt-v4',
+        audio_format: 'pcm_s16le',
+        num_channels: 1,
+        sample_rate: 16000,
+        language_hints: ['hi', 'en'],
+        translation: { type: 'one_way', target_language: 'en' }
+      }));
+
+      // 2. Start mic → PCM pipeline
+      startAudioPipeline();
+
+      // 3. Keepalive every 5s to prevent idle timeout
+      clearInterval(keepaliveTimer);
+      keepaliveTimer = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'keepalive' }));
+        }
+      }, 5000);
+
+      liveBarText.textContent = 'Streaming — words appear as you speak';
+      setStatus('Connected — start speaking.', 'ok');
+    };
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.error_code) {
+        setStatus('Soniox: ' + msg.error_message, 'error');
+        // Don't auto-reconnect on auth errors
+        if (msg.error_code === 401) { stopLive(); return; }
+        scheduleReconnect();
+        return;
+      }
+      if (msg.finished) return;
+      processTokens(msg.tokens || []);
+    };
+
+    ws.onerror = () => {
+      // Will be followed by onclose, handle there
+    };
+
+    ws.onclose = (e) => {
+      clearInterval(keepaliveTimer);
+      stopAudioPipeline();
+      if (isLive) {
+        liveBarText.textContent = 'Reconnecting…';
+        setStatus('Connection dropped — reconnecting…', 'reconnecting');
+        scheduleReconnect();
+      }
+    };
+  }
+
+  function scheduleReconnect() {
+    if (!isLive) return;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+      reconnectDelay = Math.min(reconnectDelay * 1.5, 8000); // exponential backoff, max 8s
+      connectWebSocket();
+    }, reconnectDelay);
+  }
+
+  // ── Audio pipeline ─────────────────────────────────────────────────────────
+  function startAudioPipeline() {
+    stopAudioPipeline(); // clean previous if any
+    try {
+      audioCtx = new AudioContext({ sampleRate: 16000 });
+      const source = audioCtx.createMediaStreamSource(micStream);
+      processor = audioCtx.createScriptProcessor(2048, 1, 1);
+      processor.onaudioprocess = (e) => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        const f32 = e.inputBuffer.getChannelData(0);
+        const i16 = new Int16Array(f32.length);
+        for (let i = 0; i < f32.length; i++) {
+          const s = Math.max(-1, Math.min(1, f32[i]));
+          i16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+        }
+        ws.send(i16.buffer);
+      };
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
+    } catch(e) {
+      setStatus('Audio error: ' + e.message, 'error');
+    }
+  }
+
+  function stopAudioPipeline() {
+    if (processor) { try { processor.disconnect(); } catch(e){} processor = null; }
+    if (audioCtx) { try { audioCtx.close(); } catch(e){} audioCtx = null; }
+  }
+
+  // ── Token processing ───────────────────────────────────────────────────────
+  // Soniox sends each token with:
+  //   tok.text               = the word text (Hindi OR English depending on translation_status)
+  //   tok.translation_status = "original"    → this is the source language (Hindi)
+  //                          = "translation" → this is the translated text (English)
+  //                          = "none" / undefined → no translation configured
+  function processTokens(tokens) {
+    let interimHindi = '', interimEnglish = '';
+    let newFinalHindi = '', newFinalEnglish = '';
+
+    for (const tok of tokens) {
+      if (!tok.text) continue;
+      // Log every final token so we can inspect translation_status
+      if (tok.is_final) dbg(`FINAL ts=${tok.translation_status||'none'} text="${tok.text}"`);
+      const isTranslation = tok.translation_status === 'translation';
+      const isOriginal    = tok.translation_status === 'original' || !tok.translation_status || tok.translation_status === 'none';
+
+      if (tok.is_final) {
+        if (isTranslation) newFinalEnglish += tok.text;
+        else if (isOriginal) newFinalHindi += tok.text;
+      } else {
+        if (isTranslation) interimEnglish += tok.text;
+        else if (isOriginal) interimHindi += tok.text;
+      }
+    }
+
+    if (newFinalHindi) finalHindi += newFinalHindi;
+    if (newFinalEnglish) {
+      finalEnglish += newFinalEnglish;
+      pendingSpeak += newFinalEnglish;
+      // Flush at sentence boundary OR after ~5 words for faster audio response
+      const trimmed = pendingSpeak.trim();
+      const wordCount = trimmed.split(/\s+/).length;
+      const atBoundary = /[.!?]\s*$/.test(trimmed);
+      if (atBoundary || wordCount >= 5) {
+        const toSpeak = trimmed;
+        pendingSpeak = '';
+        addHistory(toSpeak);
+        if (document.getElementById('auto-speak').value === 'yes') {
+          speakQueue.push(toSpeak);
+          drainQueue();
+        }
+      }
+    }
+
+    renderLive(hindiLive, finalHindi, interimHindi);
+    renderLive(englishLive, finalEnglish, interimEnglish);
+  }
+
+  function renderLive(el, final, interim) {
+    el.className = 'live-transcript';
+    el.innerHTML =
+      (final  ? `<span class="final">${esc(final)}</span>` : '') +
+      (interim ? `<span class="interim">${esc(interim)}</span>` : '');
+  }
+
+  function addHistory(english) {
+    const item = document.createElement('div');
+    item.className = 'hist-item';
+    item.textContent = english;
+    historyEl.prepend(item);
+    // Show the history section if hidden, and reveal the show-button too
+    const section = document.getElementById('history-section');
+    const showBtn = document.getElementById('show-history-btn');
+    if (section.style.display === 'none') showBtn.style.display = 'inline-block';
+  }
+
+  // ── Stop ───────────────────────────────────────────────────────────────────
+  function stopLive() {
+    isLive = false;
+    clearInterval(keepaliveTimer); keepaliveTimer = null;
+    clearTimeout(reconnectTimer);  reconnectTimer = null;
+
+    liveBtn.classList.remove('active');
+    dot.classList.remove('pulse');
+    btnLabel.textContent = 'Click to start live translation';
+    liveBar.classList.remove('show');
+
+    stopAudioPipeline();
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+    if (ws) {
+      try { ws.onclose = null; ws.close(); } catch(e){}
+      ws = null;
+    }
+
+    // Speak any remaining buffer
+    if (pendingSpeak.trim() && document.getElementById('auto-speak').value === 'yes') {
+      speakQueue.push(pendingSpeak.trim());
+      drainQueue();
+    }
+    pendingSpeak = '';
+    setStatus('Stopped.');
+  }
+
+  // ── Sarvam TTS ─────────────────────────────────────────────────────────────
+  async function drainQueue() {
+    if (isSpeaking || speakQueue.length === 0) return;
+    isSpeaking = true;
+    setStatus('Speaking…', 'speaking');
+    await speakText(speakQueue.shift());
+    isSpeaking = false;
+    if (speakQueue.length > 0) drainQueue();
+    else if (isLive) setStatus('Listening…', '');
+  }
+
+  async function speakText(text) {
+    const key = document.getElementById('sarvam-key').value.trim();
+    const voice = document.getElementById('tts-voice').value;
+    if (!key || !text) { dbg('speakText skipped: no key or no text'); return; }
+    dbg(`speakText called: "${text.slice(0,40)}…"`);
+    try {
+      const res = await fetch('https://api.sarvam.ai/text-to-speech', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'api-subscription-key': key },
+        body: JSON.stringify({
+          inputs: [text],
+          target_language_code: 'en-IN',
+          speaker: voice,
+          model: 'bulbul:v3',
+          enable_preprocessing: true
+        })
+      });
+      dbg(`Sarvam response status: ${res.status}`);
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({}));
+        const msg = 'TTS error: ' + (err.error?.message || err.message || res.status);
+        dbg(msg);
+        setStatus(msg, 'error');
+        return;
+      }
+      const data = await res.json();
+      const b64 = data.audios?.[0];
+      if (!b64) { dbg('Sarvam returned no audio data'); return; }
+      dbg(`Got audio b64 length=${b64.length}`);
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'audio/wav' });
+      const url = URL.createObjectURL(blob);
+      await new Promise(resolve => {
+        const audio = new Audio(url);
+        audio.onended = () => { dbg('audio playback ended'); resolve(); };
+        audio.onerror = (e) => { dbg('audio playback error: ' + e); resolve(); };
+        const playPromise = audio.play();
+        if (playPromise) playPromise.catch(e => { dbg('play() rejected: ' + e); resolve(); });
+      });
+      URL.revokeObjectURL(url);
+    } catch(e) {
+      dbg('speakText exception: ' + e.message);
+      setStatus('TTS error: ' + e.message, 'error');
+    }
+  }
+</script>
+</body>
+</html>
